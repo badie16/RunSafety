@@ -1,0 +1,13 @@
+[package]
+name = "runsafety-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Shared types and protocol for RunSafety security monitor"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
