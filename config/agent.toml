@@ -1,0 +1,80 @@
+[discovery]
+scan_interval_secs = 5
+
+[[discovery.cli]]
+name = "claude"
+type = "ClaudeCode"
+patterns = ["claude", "claude-code", "@anthropic/claude-code"]
+
+[[discovery.cli]]
+name = "codex"
+type = "Codex"
+patterns = ["codex", "openai-codex"]
+
+[[discovery.cli]]
+name = "gemini"
+type = "GeminiCli"
+patterns = ["gemini", "gemini-cli"]
+
+[[discovery.cli]]
+name = "cursor"
+type = "Cursor"
+patterns = ["cursor-agent", "cursor"]
+
+[[discovery.cli]]
+name = "aider"
+type = "Aider"
+patterns = ["aider"]
+
+[[discovery.cli]]
+name = "opencode"
+type = "OpenCode"
+patterns = ["opencode", "open-code"]
+
+[governor]
+enabled = true
+action = "throttle"       # warn | throttle | kill
+warn_threshold = 0.85
+urgent_threshold = 0.95
+monitor_interval_secs = 2
+leak_window_secs = 60
+leak_min_growth = "100MB"
+auto_restart = false
+
+[governor.defaults]
+memory_high = "2GB"
+memory_max = "3GB"
+
+[governor.cli.ClaudeCode]
+memory_high = "3GB"
+memory_max = "4GB"
+leak_min_growth = "500MB"
+
+[governor.cli.Codex]
+memory_high = "1.5GB"
+memory_max = "2GB"
+
+[governor.cli.GeminiCli]
+memory_high = "2GB"
+memory_max = "3GB"
+
+[governor.cli.Cursor]
+memory_high = "3GB"
+memory_max = "4GB"
+
+[governor.cli.OpenCode]
+memory_high = "2GB"
+memory_max = "3GB"
+
+[security]
+enabled = true
+scan_interval_secs = 3
+fast_scan_interval_ms = 500
+exfil_window_secs = 10
+dedup_window_secs = 300
+notify_min_severity = "Critical"  # Info | Warning | Critical
+
+[audit]
+enabled = true
+storage = "sqlite"  # jsonl | sqlite
+retention_days = 90

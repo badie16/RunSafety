@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RunSafety Event Handler
+Comment=Opens RunSafety TUI focused on a specific event
+Exec=runsafety --focus-event %u
+NoDisplay=true
+MimeType=x-scheme-handler/runsafety
+Categories=Utility;
+Terminal=true

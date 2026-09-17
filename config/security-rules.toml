@@ -1,0 +1,297 @@
+# RunSafety Security Rules
+# Users override in ~/.config/runsafety/security-rules.toml
+
+# --- Sensitive file access rules ---
+
+[[file_access]]
+name = "SSH private keys"
+paths = ["~/.ssh/id_rsa", "~/.ssh/id_ed25519", "~/.ssh/id_ecdsa", "~/.ssh/id_dsa"]
+severity = "Warning"
+
+[[file_access]]
+name = "SSH config"
+paths = ["~/.ssh/config", "~/.ssh/known_hosts", "/etc/ssh/"]
+severity = "Info"
+known_safe = "Normal: SSH client reads config and known_hosts during connections."
+
+[[file_access]]
+name = "SSH public keys"
+paths = ["~/.ssh/authorized_keys"]
+severity = "Info"
+
+[[file_access]]
+name = "AWS credentials"
+paths = ["~/.aws/credentials", "~/.aws/config"]
+severity = "Critical"
+known_safe_for = ["ClaudeCode", "Codex", "Cursor"]
+
+[[file_access]]
+name = "GPG keys"
+paths = ["~/.gnupg/"]
+severity = "Critical"
+
+[[file_access]]
+name = "Git credentials"
+paths = ["~/.git-credentials"]
+severity = "Critical"
+
+[[file_access]]
+name = "Kubernetes config"
+paths = ["~/.kube/config"]
+severity = "Critical"
+
+[[file_access]]
+name = "System passwords"
+paths = ["/etc/shadow"]
+severity = "Critical"
+
+[[file_access]]
+name = "User database"
+paths = ["/etc/passwd"]
+severity = "Info"
+known_safe = "Normal: Node.js reads /etc/passwd for os.userInfo(). No passwords stored here (those are in /etc/shadow)."
+
+[[file_access]]
+name = "Environment files"
+paths = [".env", ".env.local", ".env.production"]
+severity = "Warning"
+
+[[file_access]]
+name = "Docker config"
+paths = ["~/.docker/config.json"]
+severity = "Warning"
+
+[[file_access]]
+name = "Browser data"
+paths = ["~/.config/google-chrome/", "~/.mozilla/"]
+severity = "Warning"
+
+[[file_access]]
+name = "Shell config (persistence)"
+paths = ["~/.bashrc", "~/.zshrc", "~/.profile", "~/.bash_profile"]
+severity = "Warning"
+known_safe = "Normal: shells read config on startup. Suspicious only if a non-shell process WRITES to these files."
+
+[[file_access]]
+name = "Netrc credentials"
+paths = ["~/.netrc"]
+severity = "Critical"
+
+[[file_access]]
+name = "Crontab"
+paths = ["/var/spool/cron/", "/etc/crontab"]
+severity = "Critical"
+
+[[file_access]]
+name = "Hosts file"
+paths = ["/etc/hosts"]
+severity = "Info"
+known_safe = "Normal: Node.js/DNS resolution reads /etc/hosts for hostname lookups."
+
+[[file_access]]
+name = "Temp executables"
+paths = ["/tmp/"]
+severity = "Info"
+known_safe = "Normal: Node.js uses /tmp for temporary files during package installation and compilation."
+
+[[file_access]]
+name = "Container indicators"
+paths = ["/.dockerenv", "/proc/1/cgroup"]
+severity = "Warning"
+
+[[file_access]]
+name = "Kubernetes secrets"
+paths = ["/var/run/secrets/kubernetes.io/"]
+severity = "Critical"
+
+[[file_access]]
+name = "Process environment"
+paths = ["/proc/self/environ", "/proc/self/mountinfo"]
+severity = "Warning"
+known_safe = "Normal: Node.js and many tools read /proc/self/environ on startup. Suspicious only if followed by network exfiltration."
+
+[[file_access]]
+name = "Package manager tokens"
+paths = ["~/.npmrc", "~/.pypirc", "~/.yarnrc"]
+severity = "Critical"
+known_safe_for = ["ClaudeCode", "Codex", "Cursor"]
+
+[[file_access]]
+name = "GitHub CLI config"
+paths = ["~/.config/gh/hosts.yml"]
+severity = "Warning"
+known_safe = "Normal: Claude Code reads GitHub CLI config for authentication. Expected during git operations."
+known_safe_for = ["ClaudeCode", "Codex", "Cursor"]
+
+[[file_access]]
+name = "Cloud credentials"
+paths = [
+    "~/.terraform.d/credentials.tfrc.json",
+    "~/.vault-token",
+    "~/.config/gcloud/application_default_credentials.json",
+]
+severity = "Critical"
+
+[[file_access]]
+name = "Systemd user services"
+paths = ["~/.config/systemd/user/"]
+severity = "Critical"
+
+[[file_access]]
+name = "XDG autostart"
+paths = ["~/.config/autostart/"]
+severity = "Critical"
+
+[[file_access]]
+name = "System cron directories"
+paths = ["/etc/cron.d/", "/etc/cron.daily/", "/etc/cron.weekly/"]
+severity = "Critical"
+
+[[file_access]]
+name = "Git hooks directory"
+paths = [".git/hooks/"]
+severity = "Critical"
+
+[[file_access]]
+name = "Process cmdlines"
+paths = ["/proc/*/cmdline"]
+severity = "Warning"
+
+[[file_access]]
+name = "Network info"
+paths = ["/proc/net/tcp", "/proc/net/tcp6", "/proc/net/udp"]
+severity = "Warning"
+
+[[file_access]]
+name = "CPU and hardware info"
+paths = ["/proc/cpuinfo", "/proc/meminfo"]
+severity = "Info"
+known_safe = "Normal: many tools read /proc/cpuinfo and /proc/meminfo for system info."
+
+# --- Network allowlist ---
+
+[[network_allow]]
+name = "AI APIs"
+hosts = [
+    "api.anthropic.com",
+    "claude.ai",
+    "console.anthropic.com",
+    "statsig.anthropic.com",
+    "sentry.io",
+    "api.openai.com",
+    "generativelanguage.googleapis.com",
+    "aistudio.google.com",
+]
+
+[[network_allow]]
+name = "Package registries"
+hosts = [
+    "registry.npmjs.org",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "crates.io",
+    "static.crates.io",
+]
+
+[[network_allow]]
+name = "Code hosting"
+hosts = [
+    "github.com",
+    "api.github.com",
+    "gitlab.com",
+    "bitbucket.org",
+]
+
+[[network_allow]]
+name = "CDN and infrastructure"
+hosts = [
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
+]
+
+# --- Dangerous command patterns (regex) ---
+
+[[command_pattern]]
+name = "Dangerous delete"
+pattern = "rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+)?/"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Curl pipe shell"
+pattern = "(curl|wget).*\\|.*(sh|bash|zsh)"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Reverse shell"
+pattern = "(nc\\s+-[a-zA-Z]*e|bash\\s+-i|/dev/tcp/|mkfifo.*nc)"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Data exfiltration"
+pattern = "curl.*-X\\s*POST.*-d|curl.*--data|wget.*--post"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Base64 decode execute"
+pattern = "base64.*(-d|--decode).*\\|"
+severity = "Warning"
+
+[[command_pattern]]
+name = "World writable"
+pattern = "chmod\\s+(777|a\\+w)"
+severity = "Warning"
+
+[[command_pattern]]
+name = "Process kill"
+pattern = "kill\\s+-9|killall"
+severity = "Warning"
+
+[[command_pattern]]
+name = "Crontab modification"
+pattern = "crontab"
+severity = "Critical"
+
+[[command_pattern]]
+name = "SSH lateral movement"
+pattern = "ssh\\s+(?!.*git@).*@"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Privilege escalation"
+pattern = "(sudo|su\\s+-|pkexec|doas)"
+severity = "Critical"
+
+[[command_pattern]]
+name = "File permission change"
+pattern = "chmod\\s+\\+x"
+severity = "Warning"
+
+[[command_pattern]]
+name = "System reconnaissance"
+pattern = "(\\b|/)id\\b|whoami|uname\\s+-a|hostname"
+severity = "Warning"
+
+[[command_pattern]]
+name = "DNS exfiltration"
+pattern = "(dig|nslookup|host).*\\$\\("
+severity = "Critical"
+
+[[command_pattern]]
+name = "Cloud metadata access"
+pattern = "(curl|wget).*(169\\.254\\.169\\.254|metadata\\.google\\.internal)"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Script execution from /tmp"
+pattern = "(bash|sh|python|node|perl|ruby)\\s+/tmp/"
+severity = "Critical"
+
+[[command_pattern]]
+name = "Clone to /tmp"
+pattern = "git\\s+clone.*\\s/tmp/"
+severity = "Warning"
+
+[[command_pattern]]
+name = "Find sensitive files"
+pattern = "find.*\\.(key|pem|p12|pfx|jks|env|cred)"
+severity = "Warning"
