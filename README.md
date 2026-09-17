@@ -1,91 +1,160 @@
+<div align="center">
+
 # RunSafety
 
-Runtime security monitor for AI coding agents.
+**Runtime security monitor for AI coding agents**
 
-## The Problem
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#platform-support)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-AI coding tools run commands on your machine with broad permissions. They read files, make network connections, spawn child processes. npm postinstall scripts, piped curl commands, credential file reads: it all happens in the background with no visibility.
+---
 
-## What RunSafety Does
+AI coding tools run commands on your machine with broad permissions. **RunSafety** watches from the background and alerts you when something suspicious happens.
 
-- **Watches file access.** Detects reads of SSH keys, AWS credentials, .env files, GPG keys, and 30+ other sensitive paths.
-- **Monitors network connections.** Flags connections to hosts not on the allowlist.
-- **Detects dangerous commands.** Reverse shells, `curl | sh`, `chmod 777`, crontab edits, cloud metadata access.
-- **Correlates signals.** Sensitive file read followed by a network connection within 10 seconds triggers a data exfiltration alert.
-- **Enforces memory limits.** Cgroups v2 prevents AI tools from freezing your machine. Tiered warnings before throttle or kill.
-- **Sends desktop notifications.** You see alerts without checking a dashboard.
+</div>
 
-No wrappers. No proxies. You keep using Claude Code, Codex, Cursor, Gemini CLI, Aider, or any other tool normally. RunSafety watches from the background.
+---
 
-## How It Works
+## Why RunSafety?
 
-The `runsafety-agent` daemon runs as a user service (systemd on Linux, launchd on macOS). It scans `/proc` every 5 seconds to discover AI coding tool processes by matching command-line patterns. Once a session is found, five monitors activate:
+AI coding tools (Claude Code, Codex, Gemini CLI, Cursor, Aider, OpenCode) can:
+- Read your SSH keys, AWS credentials, and `.env` files
+- Make network connections to unknown servers
+- Execute dangerous commands like `curl | sh`
+- Consume all your memory and freeze your machine
 
-- **FileMonitor:** scans `/proc/pid/fd` and watches sensitive directories with inotify
-- **NetworkMonitor:** parses `/proc/pid/net/tcp` and matches socket inodes
-- **ProcessMonitor:** tracks child process trees recursively
-- **ResourceMonitor:** reads RSS from `/proc/pid/stat`, detects memory leaks
-- **OutputMonitor:** watches command output for suspicious patterns
+**RunSafety detects all of this in real-time.**
 
-All signals flow through a tokio broadcast channel to consumers: the rule engine, audit logger, alert sender, cgroup governor, and IPC server.
+---
 
-```
-runsafety-agent (daemon, always running)
-|
-|-- Discovery         /proc/*/cmdline scanning, pattern matching
-|-- File Monitor      /proc/pid/fd + inotify on sensitive dirs
-|-- Network Monitor   /proc/pid/net/tcp, socket inode matching
-|-- Process Monitor   recursive child scanning, command patterns
-|-- Resource Governor  cgroups v2 memory limits, leak detection
-|-- Correlation        file access + network = exfil alert
-|-- Audit Logger       JSON Lines to ~/.local/share/runsafety/audit/
-|-- IPC Server         Unix socket, JSON-RPC (ListSessions, GetEvents, Subscribe)
-|
-|-- Config: ~/.config/runsafety/agent.toml
-|-- Rules:  ~/.config/runsafety/security-rules.toml
-|-- Socket: ~/.local/share/runsafety/agent.sock
-```
+## Features
 
-The optional `runsafety` TUI client connects to the daemon over a Unix socket for a live dashboard with session, resource, and security views.
+<table>
+<tr>
+<td>
+
+### File Monitoring
+Detects reads of 30+ sensitive paths including SSH keys, AWS credentials, GPG keys, and environment files.
+
+</td>
+<td>
+
+### Network Monitoring
+Flags connections to hosts not on the allowlist. Correlates file access + network = exfiltration alert.
+
+</td>
+</tr>
+<tr>
+<td>
+
+### Command Detection
+Catches reverse shells, `curl | sh`, `chmod 777`, crontab edits, and privilege escalation attempts.
+
+</td>
+<td>
+
+### Memory Governor
+Enforces memory limits via cgroups v2. Tiered warnings before throttle or kill.
+
+</td>
+</tr>
+<tr>
+<td>
+
+### Desktop Notifications
+Get instant alerts without checking a dashboard.
+
+</td>
+<td>
+
+### Audit Logging
+SQLite database with query API for historical analysis.
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Supported AI Tools
 
-| Tool        | Detection Patterns                                |
-| ----------- | ------------------------------------------------- |
-| Claude Code | `claude`, `claude-code`, `@anthropic/claude-code` |
-| Codex       | `codex`, `openai-codex`                           |
-| Gemini CLI  | `gemini`, `gemini-cli`                            |
-| Cursor      | `cursor-agent`, `cursor`                          |
-| Aider       | `aider`                                           |
-| OpenCode    | `opencode`, `open-code`                           |
-| Custom      | Configurable patterns in `agent.toml`             |
+| Tool | Detection | Memory Limit |
+|------|-----------|--------------|
+| Claude Code | `claude`, `claude-code` | 3GB / 4GB |
+| Codex | `codex`, `openai-codex` | 1.5GB / 2GB |
+| Gemini CLI | `gemini`, `gemini-cli` | 2GB / 3GB |
+| Cursor | `cursor-agent`, `cursor` | 3GB / 4GB |
+| Aider | `aider` | 2GB / 3GB |
+| OpenCode | `opencode`, `open-code` | 2GB / 3GB |
+| Custom | Configurable in `agent.toml` | Configurable |
 
-## Detection Rules
+---
 
-| Threat                       | How                                     | OWASP ASI |
-| ---------------------------- | --------------------------------------- | --------- |
-| SSH/AWS/GPG key access       | FD scanning + inotify                   | ASI-02    |
-| Writes outside project dir   | Boundary detection                      | ASI-01    |
-| Unknown network connections  | TCP parsing + allowlist                 | ASI-05    |
-| Data exfiltration            | File + network correlation (10s window) | ASI-08    |
-| `curl \| sh`, reverse shells | Command pattern matching                | ASI-10    |
-| Suspicious child processes   | Recursive /proc/children scan           | ASI-10    |
-| Memory leaks                 | Monotonic RSS growth detection          | -         |
-| OOM kills                    | cgroup memory.events monitoring         | -         |
+## Quick Start
 
-## Resource Governor
+### Install (Linux / macOS)
 
-Three modes for memory enforcement via cgroups v2:
+```bash
+curl -sSf https://raw.githubusercontent.com/badie16/runsafety/main/dist/install.sh | sh
+```
 
-| Mode       | memory.high | memory.max | Effect                                   |
-| ---------- | ----------- | ---------- | ---------------------------------------- |
-| `warn`     | -           | -          | Desktop notifications only               |
-| `throttle` | set         | -          | Kernel throttles at soft limit (default) |
-| `kill`     | set         | set        | Hard OOM kill at max limit               |
+### Open Dashboard
 
-Per-CLI defaults: Claude Code 3GB/4GB, Codex 1.5GB/2GB, Gemini CLI 2GB/3GB, Cursor 3GB/4GB.
+```bash
+runsafety
+```
 
-Tiered alerts: 85% warning, 95% urgent ("save your work"), 100% throttled, OOM killed.
+### Try Demo
+
+```bash
+runsafety demo
+```
+
+---
+
+## Build from Source
+
+```bash
+# Clone
+git clone https://github.com/badie16/runsafety.git
+cd runsafety
+
+# Build
+cargo build --release
+
+# Install
+cp target/release/runsafety-agent target/release/runsafety ~/.local/bin/
+mkdir -p ~/.config/runsafety
+cp config/agent.toml config/security-rules.toml ~/.config/runsafety/
+```
+
+---
+
+## Architecture
+
+```
+runsafety-agent (daemon)
+├── Discovery        Process scanning via /proc or WMI
+├── File Monitor     Sensitive path detection
+├── Network Monitor  TCP connection tracking
+├── Process Monitor  Child process scanning
+├── Resource Governor Memory limits via cgroups
+├── Security Rules   Configurable threat detection
+├── Audit Logger     SQLite / JSONL storage
+└── IPC Server       Unix socket / Named pipe
+```
+
+```
+runsafety (TUI client)
+├── Sessions View    Active AI tools
+├── Resources View   Memory usage graphs
+├── Security View    Alerts and events
+└── Tasks View       Command history
+```
+
+---
 
 ## Configuration
 
@@ -97,7 +166,7 @@ scan_interval_secs = 5
 
 [governor]
 enabled = true
-action = "throttle"       # warn | throttle | kill
+action = "throttle"  # warn | throttle | kill
 warn_threshold = 0.85
 urgent_threshold = 0.95
 
@@ -105,67 +174,80 @@ urgent_threshold = 0.95
 memory_high = "2GB"
 memory_max = "3GB"
 
-[governor.cli.ClaudeCode]
-memory_high = "3GB"
-memory_max = "4GB"
-
 [security]
 enabled = true
 scan_interval_secs = 3
 exfil_window_secs = 10
+
+[audit]
+enabled = true
+storage = "sqlite"  # jsonl | sqlite
+retention_days = 90
 ```
 
 ### security-rules.toml
 
-Defines sensitive file paths, network allowlists, and dangerous command patterns. See [`config/security-rules.toml`](config/security-rules.toml) for the full default ruleset.
+| Rule Type | Purpose |
+|-----------|---------|
+| `file_access` | Sensitive file paths to monitor |
+| `network_allow` | Trusted hosts for network connections |
+| `command_pattern` | Regex patterns for dangerous commands |
 
-## Install
+See [`config/security-rules.toml`](config/security-rules.toml) for the full default ruleset.
 
-Download and install (Linux and macOS):
+---
 
-```bash
-curl -sSf https://raw.githubusercontent.com/badie16/runsafety/main/dist/install.sh | sh
-```
+## Detection Rules
 
-This installs both the daemon and the TUI, starts the background service, and adds default config files.
+| Threat | Detection Method | OWASP |
+|--------|------------------|-------|
+| SSH/AWS/GPG key access | FD scanning + inotify | ASI-02 |
+| Writes outside project | Boundary detection | ASI-01 |
+| Unknown network connections | TCP parsing + allowlist | ASI-05 |
+| Data exfiltration | File + network correlation | ASI-08 |
+| Reverse shells, `curl \| sh` | Command pattern matching | ASI-10 |
+| Suspicious child processes | Recursive /proc scan | ASI-10 |
+| Memory leaks | Monotonic RSS growth | - |
+| OOM kills | cgroup memory.events | - |
 
-After install, open the dashboard:
+---
 
-```bash
-runsafety
-```
+## Resource Governor
 
-Try the demo to see alerts in action:
+| Mode | memory.high | memory.max | Effect |
+|------|-------------|------------|--------|
+| `warn` | - | - | Desktop notifications only |
+| `throttle` | set | - | Kernel throttles at soft limit **(default)** |
+| `kill` | set | set | Hard OOM kill at max limit |
 
-```bash
-runsafety demo
-```
+**Tiered alerts:** 85% warning → 95% urgent → 100% throttled → OOM killed
 
-### Build from source
-
-```bash
-git clone https://github.com/badie16/runsafety.git
-cd runsafety
-cargo build --release
-cp target/release/runsafety-agent target/release/runsafety ~/.local/bin/
-mkdir -p ~/.config/runsafety
-cp config/agent.toml config/security-rules.toml ~/.config/runsafety/
-```
+---
 
 ## Platform Support
 
-| Platform              | Status                                     |
-| --------------------- | ------------------------------------------ |
-| Linux (x86_64)        | Full support, primary development platform |
-| Linux (aarch64)       | Full support                               |
-| macOS (Intel)         | Works, CI tested                           |
-| macOS (Apple Silicon) | Works, CI tested                           |
-| Windows               | In development                             |
+| Platform | Status |
+|----------|--------|
+| Linux (x86_64) | Full support |
+| Linux (aarch64) | Full support |
+| macOS (Intel) | Full support |
+| macOS (Apple Silicon) | Full support |
+| Windows | In development |
+
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0 - See [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**Built with Rust + Tokio + Ratatui**
+
+</div>
