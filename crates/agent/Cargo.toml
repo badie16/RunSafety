@@ -12,6 +12,10 @@ description = "Runtime security monitor daemon for AI coding agents"
 name = "runsafety-agent"
 path = "src/main.rs"
 
+[lib]
+name = "runsafety_agent"
+path = "src/lib.rs"
+
 [dependencies]
 runsafety-shared = { path = "../shared" }
 tokio = { version = "1", features = ["full"] }

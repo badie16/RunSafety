@@ -7,6 +7,8 @@ use runsafety_shared::config::{AgentConfig, SecurityRulesConfig};
 
 pub struct DaemonPaths {
     pub audit_dir: PathBuf,
+    pub analytics_dir: PathBuf,
+    pub config_dir: PathBuf,
     pub pid_file: PathBuf,
     #[cfg(not(target_os = "windows"))]
     pub socket_path: PathBuf,
@@ -19,8 +21,13 @@ impl DaemonPaths {
         let data_dir = dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
             .join("runsafety");
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("/etc"))
+            .join("runsafety");
         Self {
             audit_dir: data_dir.join("audit"),
+            analytics_dir: data_dir.join("analytics"),
+            config_dir,
             pid_file: data_dir.join("agent.pid"),
             #[cfg(not(target_os = "windows"))]
             socket_path: data_dir.join("agent.sock"),

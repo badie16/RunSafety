@@ -80,6 +80,23 @@ fn main() -> Result<()> {
 async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
     let (tx, _rx) = broadcast::channel::<Signal>(1024);
 
+    // Initialize analytics dashboard
+    let analytics = analytics::AnalyticsDashboard::new(&paths.analytics_dir)?;
+    info!("Analytics dashboard: {}", paths.analytics_dir.display());
+
+    // Initialize plugin manager
+    let plugin_manager = plugin::PluginManager::new(&paths.config_dir);
+    plugin_manager.load_plugins().await?;
+    let plugins = plugin_manager.list_plugins().await;
+    info!("Loaded {} plugins", plugins.len());
+
+    // Initialize config manager
+    let config_manager = config_manager::ConfigManager::new(&paths.config_dir);
+
+    // Initialize alert notifier
+    let alert_config = runsafety_shared::config::AlertConfig::default();
+    let alert_notifier = alert_extended::AlertNotifier::new(&alert_config);
+
     // Spawn audit logger consumer (based on config storage type)
     let mut audit_rx = tx.subscribe();
     let audit_handle = match config.audit.storage {
