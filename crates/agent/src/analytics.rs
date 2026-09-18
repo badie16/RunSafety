@@ -46,11 +46,13 @@ pub struct SecurityStats {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TimeSeriesData {
     pub timestamps: Vec<u64>,
     pub values: Vec<f64>,
 }
 
+#[allow(dead_code)]
 impl AnalyticsDashboard {
     pub fn new(dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(dir).context("creating analytics directory")?;

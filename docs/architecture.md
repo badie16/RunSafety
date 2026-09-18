@@ -13,6 +13,17 @@ RunSafety consists of two components:
 1. **runsafety-agent** - Background daemon that monitors AI coding tools
 2. **runsafety** - TUI dashboard client (optional)
 
+### Features
+
+- **Process Discovery** - Auto-detect AI CLI sessions (Claude Code, Codex, OpenCode, etc.)
+- **Security Monitoring** - File access, network connections, dangerous commands
+- **Resource Governor** - Memory limits, leak detection, OOM protection
+- **Audit Logging** - JSONL or SQLite storage for all events
+- **Analytics Dashboard** - Statistics, metrics, time series data
+- **Plugin System** - Extensible with custom monitors and rules
+- **Alert Notifications** - Email, SMS, and webhook alerts
+- **Config Management** - Export/import/backup configurations
+
 <div align="center">
 
 ![Architecture](images/architecture.png)
@@ -52,6 +63,10 @@ RunSafety consists of two components:
 │   ├── audit.rs     # JSONL audit logger
 │   ├── audit_sqlite.rs  # SQLite audit logger
 │   ├── alert.rs     # Desktop notifications
+│   ├── alert_extended.rs # Email/SMS/Webhook alerts
+│   ├── analytics.rs # Analytics dashboard
+│   ├── plugin.rs    # Plugin system
+│   ├── config_manager.rs # Config export/import
 │   └── ipc.rs       # IPC server
 │
 └── cli/             # TUI client

@@ -75,6 +75,13 @@ runsafety [COMMAND] [OPTIONS]
 |---------|-------------|
 | (default) | Open the TUI dashboard |
 | `status` | Check if daemon is running |
+| `list` | List active sessions |
+| `events` | Show security events |
+| `kill <ID>` | Kill a session by ID |
+| `config` | Configuration management |
+| `plugin` | Plugin management |
+| `analytics` | Analytics and statistics |
+| `test-alert` | Send test notification |
 | `demo` | Run demo to see alerts in action |
 | `help` | Print help |
 
@@ -94,6 +101,36 @@ runsafety
 
 # Check daemon status
 runsafety status
+
+# List active sessions
+runsafety list
+
+# Show security events
+runsafety events --severity Warning --limit 20
+
+# Kill a session
+runsafety kill 1
+
+# Export configuration
+runsafety config export --output backup.json
+
+# Import configuration
+runsafety config import --input backup.json
+
+# Validate configuration
+runsafety config validate
+
+# List plugins
+runsafety plugin list
+
+# Show analytics summary
+runsafety analytics summary
+
+# Show memory statistics
+runsafety analytics memory --session 1
+
+# Export analytics
+runsafety analytics export --output analytics.json
 
 # Run demo
 runsafety demo

@@ -78,3 +78,25 @@ notify_min_severity = "Critical"  # Info | Warning | Critical
 enabled = true
 storage = "sqlite"  # jsonl | sqlite
 retention_days = 90
+
+[alerts]
+enabled = false
+min_severity = "Warning"  # Info | Warning | Critical
+
+# Email alerts (uncomment to enable)
+# [alerts.email]
+# to = "admin@example.com"
+# smtp_server = "smtp.example.com"
+# smtp_port = 587
+# username = "alerts@example.com"
+# password = "your-password"
+
+# SMS alerts (uncomment to enable)
+# [alerts.sms]
+# to = "+1234567890"
+# provider = "twilio"
+# api_key = "your-api-key"
+
+# Webhook alerts (uncomment to enable)
+# [alerts.webhook]
+# url = "https://hooks.slack.com/services/xxx/yyy/zzz"

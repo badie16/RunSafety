@@ -75,7 +75,7 @@ impl LimitEnforcer for NoopEnforcer {
 // --- Ring buffer ---
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ResourceReading {
+pub struct ResourceReading {
     rss_bytes: u64,
 }
 

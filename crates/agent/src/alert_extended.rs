@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use runsafety_shared::config::{AlertConfig, EmailAlertConfig, SmsAlertConfig, WebhookAlertConfig};
 use runsafety_shared::types::{Severity, Signal};
 use tracing::{error, info};

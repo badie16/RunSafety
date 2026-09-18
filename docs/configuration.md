@@ -186,6 +186,38 @@ storage = "sqlite"
 retention_days = 90
 ```
 
+### Alerts Section
+
+Configure email, SMS, and webhook notifications.
+
+```toml
+[alerts]
+# Enable alert notifications
+enabled = false
+
+# Minimum severity for alerts
+# Options: "Info", "Warning", "Critical"
+min_severity = "Warning"
+
+# Email alerts
+[alerts.email]
+to = "admin@example.com"
+smtp_server = "smtp.example.com"
+smtp_port = 587
+username = "alerts@example.com"
+password = "your-password"
+
+# SMS alerts (via Twilio or similar)
+[alerts.sms]
+to = "+1234567890"
+provider = "twilio"
+api_key = "your-api-key"
+
+# Webhook alerts (Slack, Discord, custom)
+[alerts.webhook]
+url = "https://hooks.slack.com/services/xxx/yyy/zzz"
+```
+
 ---
 
 ## Environment Variables

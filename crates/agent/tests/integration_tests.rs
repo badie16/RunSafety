@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use runsafety_agent::analytics::AnalyticsDashboard;
 use runsafety_agent::config_manager::ConfigManager;
-use runsafety_agent::plugin::{BuiltInPlugin, PluginManager, SecurityPlugin, CustomRule};
+use runsafety_agent::plugin::{BuiltInPlugin, Plugin, PluginManager, SecurityPlugin, CustomRule};
 use runsafety_shared::types::{CliType, Severity, Signal};
 
 #[tokio::test]
