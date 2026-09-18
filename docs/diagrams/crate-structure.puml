@@ -1,0 +1,66 @@
+@startuml crate-structure
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+
+title Crate Structure
+
+package "runsafety-shared" {
+  [types.rs] as types
+  [config.rs] as config
+  [protocol.rs] as protocol
+}
+
+package "runsafety-agent" {
+  [main.rs] as agent_main
+  [daemon.rs] as daemon
+  [config.rs] as agent_config
+  
+  package "discovery" {
+    [linux.rs]
+    [macos.rs]
+    [windows.rs]
+  }
+  
+  package "security" {
+    [file_monitor.rs]
+    [net_monitor.rs]
+    [process_monitor.rs]
+    [rules.rs]
+  }
+  
+  package "governor" {
+    [cgroups.rs]
+    [ulimit.rs]
+    [monitor.rs]
+  }
+  
+  [audit.rs]
+  [audit_sqlite.rs]
+  [ipc.rs]
+  [alert.rs]
+}
+
+package "runsafety" {
+  [main.rs] as cli_main
+  [cli.rs]
+  [ipc.rs] as cli_ipc
+  
+  package "tui" {
+    [mod.rs]
+    [render.rs]
+  }
+}
+
+agent_main --> daemon
+agent_main --> agent_config
+agent_main --> types
+agent_main --> config
+agent_main --> protocol
+cli_main --> cli_ipc
+cli_main --> types
+cli_main --> config
+cli_ipc --> protocol
+
+@enduml

@@ -1,0 +1,31 @@
+@startuml deployment
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+
+title Deployment Diagram
+
+node "User Machine" {
+  component "runsafety-agent" as agent
+  component "runsafety" as tui
+  
+  database "~/.config/runsafety/" as cfg
+  database "~/.local/share/runsafety/" as db
+  
+  agent --> cfg
+  agent --> db
+  tui --> agent : IPC
+}
+
+node "Linux" {
+  folder "/proc" as proc
+}
+
+node "Windows" {
+  folder "WMI" as wmi
+}
+
+agent --> proc : Scan
+agent --> wmi : Query
+
+@enduml

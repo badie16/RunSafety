@@ -1,0 +1,49 @@
+@startuml component-diagram
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+
+title Component Diagram
+
+actor User
+actor "AI Tool" as ai
+
+rectangle "runsafety-agent" {
+  component Discovery
+  component "File\nMonitor" as FM
+  component "Network\nMonitor" as NM
+  component "Process\nMonitor" as PM
+  component "Resource\nGovernor" as RG
+  component "Security\nRules" as SR
+  component "Correlation\nEngine" as CE
+  component "Audit\nLogger" as AL
+  component "Alert\nSender" as AS
+  component "IPC\nServer" as IPC
+}
+
+rectangle "runsafety" {
+  component "TUI\nDashboard" as TUI
+}
+
+database "SQLite" as DB
+database "Config" as CFG
+
+ai --> Discovery : process
+Discovery --> FM : Signal
+Discovery --> NM : Signal
+Discovery --> PM : Signal
+FM --> CE : FileAccess
+NM --> CE : NetworkEvent
+CE --> AS : ExfilAttempt
+RG --> AS : MemoryEvent
+AS --> DB : Log
+AL --> DB
+CFG --> Discovery
+CFG --> SR
+CFG --> RG
+IPC --> TUI : JSON-RPC
+User --> TUI
+User --> AS : Notifications
+
+@enduml

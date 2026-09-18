@@ -1,0 +1,55 @@
+@startuml architecture
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+
+title RunSafety Architecture
+
+package "runsafety-agent (Daemon)" {
+  [Discovery] as disc
+  [File Monitor] as fm
+  [Network Monitor] as nm
+  [Process Monitor] as pm
+  [Resource Governor] as rg
+  [Security Rules] as sr
+  [Correlation Engine] as ce
+  [Audit Logger] as al
+  [Alert Sender] as alert
+  [IPC Server] as ipc
+}
+
+database "Storage" {
+  [SQLite/JSONL] as db
+  [Config Files] as cfg
+}
+
+cloud "Event Bus\n(tokio broadcast)" as bus
+
+actor "AI Coding Tools" as ai
+actor "TUI Client" as tui
+actor "Desktop Notifications" as notif
+
+ai --> disc : /proc / WMI
+disc --> bus : SessionDiscovered
+bus --> fm : Signal
+bus --> nm : Signal
+bus --> pm : Signal
+bus --> rg : Signal
+bus --> ce : Signal
+fm --> bus : SensitiveFileAccess
+nm --> bus : UnexpectedNetwork
+pm --> bus : SuspiciousChild
+rg --> bus : MemoryWarning
+ce --> bus : ExfilAttempt
+bus --> al : Signal
+al --> db
+bus --> alert : Signal
+alert --> notif
+cfg --> disc
+cfg --> sr
+cfg --> rg
+ipc --> bus
+tui --> ipc : JSON-RPC
+
+@enduml

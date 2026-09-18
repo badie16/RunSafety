@@ -1,0 +1,64 @@
+@startuml event-flow
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontName Arial
+
+title Event Flow
+
+|Discovery|
+start
+:Scan /proc or WMI;
+:Match CLI patterns;
+:Create Session;
+
+|Event Bus|
+:Send SessionDiscovered;
+
+|Security Monitors|
+:File Monitor;
+:Network Monitor;
+:Process Monitor;
+
+if (Sensitive access?) then (yes)
+  :Send SensitiveFileAccess;
+else (no)
+endif
+
+if (Unknown network?) then (yes)
+  :Send UnexpectedNetwork;
+else (no)
+endif
+
+if (Dangerous command?) then (yes)
+  :Send DangerousCommand;
+else (no)
+endif
+
+|Correlation Engine|
+if (File + Network\nwithin 10s?) then (yes)
+  :Send ExfilAttempt;
+else (no)
+endif
+
+|Resource Governor|
+:Check memory usage;
+if (Above threshold?) then (yes)
+  :Send MemoryWarning/Urgent;
+else (no)
+endif
+
+|Audit Logger|
+:Log to SQLite/JSONL;
+
+|Alert Sender|
+if (Critical alert?) then (yes)
+  :Send notification;
+else (no)
+endif
+
+|IPC Server|
+:Push to TUI clients;
+
+stop
+
+@enduml
