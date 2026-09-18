@@ -13,41 +13,21 @@ RunSafety consists of two components:
 1. **runsafety-agent** - Background daemon that monitors AI coding tools
 2. **runsafety** - TUI dashboard client (optional)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      runsafety-agent                         │
-├─────────────────────────────────────────────────────────────┤
-│  Discovery  →  Monitors  →  Rule Engine  →  Alert Sender   │
-│      ↓              ↓             ↓              ↓          │
-│  /proc/WMI    File/Net/Proc   Correlation   Notifications  │
-│      ↓              ↓             ↓              ↓          │
-│              Event Bus (tokio broadcast)                    │
-│                       ↓                                     │
-│              Audit Logger (SQLite/JSONL)                    │
-│                       ↓                                     │
-│              IPC Server (Unix socket / Named pipe)          │
-└─────────────────────────────────────────────────────────────┘
-                              ↕
-┌─────────────────────────────────────────────────────────────┐
-│                      runsafety (TUI)                        │
-├─────────────────────────────────────────────────────────────┤
-│  Sessions View  |  Resources View  |  Security View         │
-└─────────────────────────────────────────────────────────────┘
-```
+<div align="center">
+
+![Architecture](images/architecture.png)
+
+</div>
 
 ---
 
 ## Crate Structure
 
-```
-crates/
-├── shared/          # Shared types and protocol
-│   ├── types.rs     # CliType, Session, Signal, Severity
-│   ├── config.rs    # AgentConfig, GovernorConfig, SecurityConfig
-│   └── protocol.rs  # JSON-RPC protocol for IPC
-│
-├── agent/           # Background daemon
-│   ├── main.rs      # Entry point, task orchestration
+<div align="center">
+
+![Crate Structure](images/crate-structure.png)
+
+</div>
 │   ├── daemon.rs    # PID file, daemonize, signals
 │   ├── config.rs    # Config loading, path resolution
 │   ├── discovery/   # Process scanning
@@ -83,6 +63,36 @@ crates/
         ├── mod.rs   # TUI state management
         └── render.rs # Rendering
 ```
+
+---
+
+## Component Diagram
+
+<div align="center">
+
+![Component Diagram](images/component-diagram.png)
+
+</div>
+
+---
+
+## Event Flow
+
+<div align="center">
+
+![Event Flow](images/event-flow.png)
+
+</div>
+
+---
+
+## Deployment
+
+<div align="center">
+
+![Deployment](images/deployment.png)
+
+</div>
 
 ---
 

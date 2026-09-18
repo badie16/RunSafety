@@ -96,30 +96,13 @@ When you start RunSafety for the first time:
 ## What You'll See
 
 ### Sessions View
-```
-┌─ Sessions ──────────────────────────────────────┐
-│ ID  PID    CLI         Status    Memory         │
-│ 1   12345  Claude Code Running  1.2GB / 3GB     │
-│ 2   12346  Codex       Idle     0.5GB / 1.5GB   │
-└─────────────────────────────────────────────────┘
-```
+Shows all monitored AI coding tool sessions with PID, CLI type, status, and memory usage.
 
-### Security Alerts
-```
-┌─ Security ──────────────────────────────────────┐
-│ [CRITICAL] SSH key access by Claude Code        │
-│ [WARNING]  Unknown network by Codex             │
-│ [INFO]     File read: .env by Claude Code       │
-└─────────────────────────────────────────────────┘
-```
+### Security View
+Displays security alerts with severity levels (Critical, Warning, Info) and event details.
 
-### Resource Usage
-```
-┌─ Resources ─────────────────────────────────────┐
-│ Claude Code: ████████░░ 1.2GB / 3GB (40%)       │
-│ Codex:       ███░░░░░░░ 0.5GB / 1.5GB (33%)    │
-└─────────────────────────────────────────────────┘
-```
+### Resources View
+Memory usage graphs for each session with historical data.
 
 ---
 

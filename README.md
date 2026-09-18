@@ -134,25 +134,21 @@ cp config/agent.toml config/security-rules.toml ~/.config/runsafety/
 
 ## Architecture
 
-```
-runsafety-agent (daemon)
-├── Discovery        Process scanning via /proc or WMI
-├── File Monitor     Sensitive path detection
-├── Network Monitor  TCP connection tracking
-├── Process Monitor  Child process scanning
-├── Resource Governor Memory limits via cgroups
-├── Security Rules   Configurable threat detection
-├── Audit Logger     SQLite / JSONL storage
-└── IPC Server       Unix socket / Named pipe
-```
+<div align="center">
 
-```
-runsafety (TUI client)
-├── Sessions View    Active AI tools
-├── Resources View   Memory usage graphs
-├── Security View    Alerts and events
-└── Tasks View       Command history
-```
+![Architecture](docs/images/architecture.png)
+
+</div>
+
+---
+
+## Component Diagram
+
+<div align="center">
+
+![Component Diagram](docs/images/component-diagram.png)
+
+</div>
 
 ---
 
