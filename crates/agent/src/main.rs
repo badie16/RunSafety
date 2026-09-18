@@ -1,11 +1,15 @@
 mod alert;
+mod alert_extended;
+mod analytics;
 mod audit;
 mod audit_sqlite;
 mod config;
+mod config_manager;
 mod daemon;
 mod discovery;
 mod governor;
 mod ipc;
+mod plugin;
 mod security;
 
 use std::collections::HashMap;
