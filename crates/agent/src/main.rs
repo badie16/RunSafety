@@ -16,6 +16,7 @@ use std::collections::HashMap;
 #[cfg(target_os = "linux")]
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -24,7 +25,7 @@ use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 use runsafety_shared::config::AgentConfig;
-use runsafety_shared::types::{Session, SessionStatus, Signal};
+use runsafety_shared::types::{Session, SessionStatus, Severity, Signal};
 
 #[cfg(target_os = "linux")]
 use crate::discovery::{match_cli_type, LinuxScanner, ProcessScanner};
@@ -81,11 +82,11 @@ async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
     let (tx, _rx) = broadcast::channel::<Signal>(1024);
 
     // Initialize analytics dashboard
-    let _analytics = analytics::AnalyticsDashboard::new(&paths.analytics_dir)?;
+    let analytics = Arc::new(analytics::AnalyticsDashboard::new(&paths.analytics_dir)?);
     info!("Analytics dashboard: {}", paths.analytics_dir.display());
 
     // Initialize plugin manager
-    let plugin_manager = plugin::PluginManager::new(&paths.config_dir);
+    let plugin_manager = Arc::new(plugin::PluginManager::new(&paths.config_dir));
     plugin_manager.load_plugins().await?;
     let plugins = plugin_manager.list_plugins().await;
     info!("Loaded {} plugins", plugins.len());
@@ -94,8 +95,8 @@ async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
     let _config_manager = config_manager::ConfigManager::new(&paths.config_dir);
 
     // Initialize alert notifier
-    let alert_config = runsafety_shared::config::AlertConfig::default();
-    let _alert_notifier = alert_extended::AlertNotifier::new(&alert_config);
+    let alert_config = config.alerts.clone();
+    let alert_notifier = Arc::new(alert_extended::AlertNotifier::new(&alert_config));
 
     // Spawn audit logger consumer (based on config storage type)
     let mut audit_rx = tx.subscribe();
@@ -137,6 +138,96 @@ async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
             })
         }
     };
+
+    // Spawn analytics consumer (records all events)
+    let mut analytics_rx = tx.subscribe();
+    let analytics_clone = analytics.clone();
+    let analytics_handle = tokio::spawn(async move {
+        loop {
+            match analytics_rx.recv().await {
+                Ok(signal) => {
+                    let (event_type, severity, details) = match &signal {
+                        Signal::SessionDiscovered(s) => {
+                            ("SessionDiscovered", Severity::Info, Some(format!("{} PID {}", s.cli_type, s.pid)))
+                        }
+                        Signal::SessionExited { cli_type, pid, .. } => {
+                            ("SessionExited", Severity::Info, Some(format!("{cli_type} PID {pid}")))
+                        }
+                        Signal::MemoryWarning { cli_type, rss_bytes, .. } => {
+                            ("MemoryWarning", Severity::Warning, Some(format!("{cli_type} {rss_bytes} bytes")))
+                        }
+                        Signal::MemoryUrgent { cli_type, rss_bytes, .. } => {
+                            ("MemoryUrgent", Severity::Critical, Some(format!("{cli_type} {rss_bytes} bytes")))
+                        }
+                        Signal::OomKill { cli_type, .. } => {
+                            ("OomKill", Severity::Critical, Some(format!("{cli_type} killed")))
+                        }
+                        Signal::LeakDetected { cli_type, rss_bytes, .. } => {
+                            ("LeakDetected", Severity::Critical, Some(format!("{cli_type} {rss_bytes} bytes")))
+                        }
+                        Signal::SensitiveFileAccess { path, rule_name, severity, .. } => {
+                            ("SensitiveFileAccess", severity.clone(), Some(format!("{rule_name}: {}", path.display())))
+                        }
+                        Signal::UnexpectedNetwork { remote_addr, remote_port, .. } => {
+                            ("UnexpectedNetwork", Severity::Warning, Some(format!("{remote_addr}:{remote_port}")))
+                        }
+                        Signal::DangerousCommand { rule_name, matched_text, severity, .. } => {
+                            ("DangerousCommand", severity.clone(), Some(format!("{rule_name}: {matched_text}")))
+                        }
+                        Signal::ExfilAttempt { file_path, remote_addr, .. } => {
+                            ("ExfilAttempt", Severity::Critical, Some(format!("{} -> {remote_addr}", file_path.display())))
+                        }
+                        _ => continue,
+                    };
+                    if let Err(e) = analytics_clone.record_event(None, event_type, &severity, details.as_deref()).await {
+                        error!("Analytics record error: {e}");
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("Analytics lagged {n} events");
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    // Spawn alert consumer (sends alerts for critical events)
+    let mut alert_rx = tx.subscribe();
+    let alert_notifier_clone = alert_notifier.clone();
+    let alert_handle = tokio::spawn(async move {
+        loop {
+            match alert_rx.recv().await {
+                Ok(signal) => {
+                    if let Some(alert_msg) = alert_extended::AlertNotifier::create_alert_from_signal(&signal) {
+                        if let Err(e) = alert_notifier_clone.send_alert(&alert_msg).await {
+                            error!("Alert send error: {e}");
+                        }
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("Alert notifier lagged {n} events");
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    // Spawn plugin consumer (notifies plugins of all signals)
+    let mut plugin_rx = tx.subscribe();
+    let plugin_manager_clone = plugin_manager.clone();
+    let plugin_handle = tokio::spawn(async move {
+        loop {
+            match plugin_rx.recv().await {
+                Ok(signal) => {
+                    let _new_signals = plugin_manager_clone.notify_signal(&signal).await;
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("Plugin manager lagged {n} events");
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 
     // Spawn resource monitor (consumer + producer)
     let resource_rx = tx.subscribe();
@@ -222,6 +313,15 @@ async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
         result = audit_handle => {
             error!("Audit logger exited unexpectedly: {result:?}");
         }
+        result = analytics_handle => {
+            error!("Analytics logger exited unexpectedly: {result:?}");
+        }
+        result = alert_handle => {
+            error!("Alert notifier exited unexpectedly: {result:?}");
+        }
+        result = plugin_handle => {
+            error!("Plugin manager exited unexpectedly: {result:?}");
+        }
         result = resource_handle => {
             error!("Resource monitor exited unexpectedly: {result:?}");
         }
@@ -240,6 +340,14 @@ async fn run(config: AgentConfig, paths: config::DaemonPaths) -> Result<()> {
             error!("Security monitor exited unexpectedly: {result:?}");
         }
     }
+
+    // Cleanup on shutdown
+    plugin_manager.cleanup().await;
+    let export_path = paths.analytics_dir.join("export.json");
+    if let Err(e) = analytics.export_analytics(&export_path).await {
+        error!("Failed to export analytics on shutdown: {e}");
+    }
+    info!("Analytics exported to {}", export_path.display());
 
     Ok(())
 }
@@ -273,8 +381,6 @@ async fn discovery_loop(
             }
         };
 
-        // Collect matching processes, then sort by PID so parents register
-        // before children (parent PIDs are typically lower).
         let mut matches: Vec<(u32, runsafety_shared::types::CliType, PathBuf, Vec<String>)> =
             Vec::new();
         for proc in &processes {
@@ -292,7 +398,6 @@ async fn discovery_loop(
         }
         matches.sort_by_key(|(pid, _, _, _)| *pid);
 
-        // Register only root processes, skip children of already-tracked sessions
         for (pid, cli_type, cwd, cmdline_args) in matches {
             if is_child_of_tracked(pid, &known) {
                 continue;
@@ -321,7 +426,6 @@ async fn discovery_loop(
             known.insert(pid, session);
         }
 
-        // Check for exited processes
         let exited_pids: Vec<u32> = known
             .keys()
             .filter(|pid| !is_process_alive(**pid))
@@ -342,7 +446,6 @@ async fn discovery_loop(
 }
 
 /// Walk up the process tree to check if `pid` is a descendant of any tracked session.
-/// Prevents child/worker processes from being registered as separate sessions.
 fn is_child_of_tracked(pid: u32, known: &HashMap<u32, Session>) -> bool {
     let mut current = pid;
     for _ in 0..32 {
@@ -366,7 +469,6 @@ fn unix_timestamp() -> u64 {
         .as_secs()
 }
 
-/// Check if a process is still alive.
 #[cfg(target_os = "linux")]
 fn is_process_alive(pid: u32) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
@@ -377,7 +479,7 @@ fn is_process_alive(pid: u32) -> bool {
     use nix::errno::Errno;
     match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None) {
         Ok(()) => true,
-        Err(Errno::EPERM) => true, // process exists but owned by another user
+        Err(Errno::EPERM) => true,
         Err(_) => false,
     }
 }
