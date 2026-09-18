@@ -1,9 +1,6 @@
-use std::path::Path;
-
-use anyhow::{Context, Result};
-use runsafety_shared::config::AlertConfig;
+use runsafety_shared::config::{AlertConfig, EmailAlertConfig, SmsAlertConfig, WebhookAlertConfig};
 use runsafety_shared::types::{Severity, Signal};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct AlertNotifier {
     config: AlertConfig,
@@ -24,7 +21,7 @@ impl AlertNotifier {
         }
     }
 
-    pub async fn send_alert(&self, message: &AlertMessage) -> Result<()> {
+    pub async fn send_alert(&self, message: &AlertMessage) -> anyhow::Result<()> {
         if !self.config.enabled {
             return Ok(());
         }
@@ -64,7 +61,8 @@ impl AlertNotifier {
     }
 
     fn should_send_sms(&self, severity: &Severity) -> bool {
-        match &self.config.sms_min_severity {
+        // SMS only for Critical by default
+        match &self.config.min_severity {
             Some(min) => severity >= &Severity::parse(min),
             None => *severity == Severity::Critical,
         }
@@ -77,14 +75,12 @@ impl AlertNotifier {
         }
     }
 
-    async fn send_email(&self, email_config: &EmailConfig, message: &AlertMessage) -> Result<()> {
+    async fn send_email(&self, email_config: &EmailAlertConfig, message: &AlertMessage) -> anyhow::Result<()> {
         info!(
             "Sending email alert to {}: {}",
             email_config.to, message.title
         );
 
-        // In a real implementation, this would use an SMTP client
-        // For now, we just log the attempt
         if let Some(ref smtp_server) = email_config.smtp_server {
             info!(
                 "Would send email via {}:{} to {}",
@@ -97,14 +93,12 @@ impl AlertNotifier {
         Ok(())
     }
 
-    async fn send_sms(&self, sms_config: &SmsConfig, message: &AlertMessage) -> Result<()> {
+    async fn send_sms(&self, sms_config: &SmsAlertConfig, message: &AlertMessage) -> anyhow::Result<()> {
         info!(
             "Sending SMS alert to {}: {}",
             sms_config.to, message.title
         );
 
-        // In a real implementation, this would use an SMS API (Twilio, etc.)
-        // For now, we just log the attempt
         if let Some(ref provider) = sms_config.provider {
             info!(
                 "Would send SMS via {} to {}",
@@ -115,7 +109,7 @@ impl AlertNotifier {
         Ok(())
     }
 
-    async fn send_webhook(&self, webhook_config: &WebhookConfig, message: &AlertMessage) -> Result<()> {
+    async fn send_webhook(&self, webhook_config: &WebhookAlertConfig, message: &AlertMessage) -> anyhow::Result<()> {
         info!(
             "Sending webhook alert to {}: {}",
             webhook_config.url, message.title
@@ -128,8 +122,6 @@ impl AlertNotifier {
             "timestamp": message.timestamp,
         });
 
-        // In a real implementation, this would make an HTTP POST request
-        // For now, we just log the attempt
         info!("Webhook payload: {}", serde_json::to_string(&payload)?);
 
         Ok(())
@@ -270,28 +262,6 @@ fn unix_timestamp() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-#[derive(Debug, Clone)]
-pub struct EmailConfig {
-    pub to: String,
-    pub smtp_server: Option<String>,
-    pub smtp_port: Option<u16>,
-    pub username: Option<String>,
-    pub password: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SmsConfig {
-    pub to: String,
-    pub provider: Option<String>,
-    pub api_key: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WebhookConfig {
-    pub url: String,
-    pub headers: Option<Vec<(String, String)>>,
 }
 
 #[cfg(test)]

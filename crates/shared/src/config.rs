@@ -259,4 +259,72 @@ pub struct AgentConfig {
     pub security: SecurityConfig,
     #[serde(default)]
     pub audit: AuditConfig,
+    #[serde(default)]
+    pub alerts: AlertConfig,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            discovery: DiscoveryConfig {
+                scan_interval_secs: 5,
+                cli: Vec::new(),
+            },
+            governor: GovernorConfig::default(),
+            security: SecurityConfig::default(),
+            audit: AuditConfig::default(),
+            alerts: AlertConfig::default(),
+        }
+    }
+}
+
+// --- Alert config ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub min_severity: Option<String>,
+    #[serde(default)]
+    pub email: Option<EmailAlertConfig>,
+    #[serde(default)]
+    pub sms: Option<SmsAlertConfig>,
+    #[serde(default)]
+    pub webhook: Option<WebhookAlertConfig>,
+}
+
+impl Default for AlertConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_severity: Some("Warning".to_string()),
+            email: None,
+            sms: None,
+            webhook: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailAlertConfig {
+    pub to: String,
+    pub smtp_server: Option<String>,
+    pub smtp_port: Option<u16>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmsAlertConfig {
+    pub to: String,
+    pub provider: Option<String>,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookAlertConfig {
+    pub url: String,
+    #[serde(default)]
+    pub headers: Option<Vec<(String, String)>>,
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
-use runsafety_shared::types::{CliType, Severity, Signal};
+use runsafety_shared::types::{CliType, Severity};
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -13,7 +13,7 @@ pub struct AnalyticsDashboard {
     conn: Arc<RwLock<Connection>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AnalyticsSummary {
     pub total_sessions: u64,
     pub active_sessions: u64,
@@ -28,7 +28,7 @@ pub struct AnalyticsSummary {
     pub security_stats: SecurityStats,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MemoryStats {
     pub avg_memory_usage: f64,
     pub max_memory_usage: u64,
@@ -36,7 +36,7 @@ pub struct MemoryStats {
     pub total_leaks_detected: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SecurityStats {
     pub total_file_access_alerts: u64,
     pub total_network_alerts: u64,

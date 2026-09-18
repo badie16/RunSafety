@@ -2,22 +2,22 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use runsafety_shared::types::{CliType, Signal};
+use anyhow::Result;
+use runsafety_shared::types::Signal;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::info;
 
 pub trait Plugin: Send + Sync {
     fn name(&self) -> &str;
     fn version(&self) -> &str;
     fn description(&self) -> &str;
-    fn on_session_discovered(&self, session: &runsafety_shared::types::Session) -> Option<Signal> {
+    fn on_session_discovered(&self, _session: &runsafety_shared::types::Session) -> Option<Signal> {
         None
     }
-    fn on_signal(&self, signal: &Signal) -> Option<Signal> {
+    fn on_signal(&self, _signal: &Signal) -> Option<Signal> {
         None
     }
-    fn on_config_loaded(&self, config: &HashMap<String, String>) {}
+    fn on_config_loaded(&self, _config: &HashMap<String, String>) {}
     fn cleanup(&self) {}
 }
 
