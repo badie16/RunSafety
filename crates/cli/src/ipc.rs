@@ -105,6 +105,18 @@ impl IpcClient {
         Ok(())
     }
 
+    pub async fn get_analytics_summary(&mut self) -> Result<serde_json::Value> {
+        let resp = self.request("GetAnalyticsSummary", serde_json::json!({})).await?;
+        let result = resp.result.context("No result in response")?;
+        Ok(result)
+    }
+
+    pub async fn list_plugins(&mut self) -> Result<Vec<super::tui::PluginInfo>> {
+        let resp = self.request("ListPlugins", serde_json::json!({})).await?;
+        let result = resp.result.context("No result in response")?;
+        Ok(serde_json::from_value(result)?)
+    }
+
     /// Read next line from the connection (used for subscription notifications).
     pub async fn next_notification(&mut self) -> Result<Option<JsonRpcNotification>> {
         match self.reader.next_line().await? {

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -9,7 +11,8 @@ use ratatui::Frame;
 use runsafety_shared::protocol::SessionInfo;
 
 use super::{
-    dir_basename, ActivePane, App, DetailTab, EventEntry, EventSeverity, SessionItem, EVENT_ACTIONS,
+    dir_basename, ActivePane, App, AnalyticsTab, DetailTab, EventEntry, EventSeverity, SessionItem,
+    SettingsTab, EVENT_ACTIONS,
 };
 use crate::cli::{format_bytes, format_timestamp};
 
@@ -64,6 +67,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         (DetailTab::Events, "Events"),
         (DetailTab::Resources, "Resources"),
         (DetailTab::Info, "Info"),
+        (DetailTab::Analytics, "Analytics"),
     ];
 
     let tab_style = |tab: DetailTab, label: &str| -> Span<'static> {
@@ -98,6 +102,7 @@ fn render_header(f: &mut Frame, app: &mut App, area: Rect) {
         tab_style(DetailTab::Events, "Events"),
         tab_style(DetailTab::Resources, "Resources"),
         tab_style(DetailTab::Info, "Info"),
+        tab_style(DetailTab::Analytics, "Analytics"),
         Span::raw(format!("  {sc} sessions, {ec} events | up {uptime}")),
         filter_span(app),
     ]);
@@ -365,6 +370,7 @@ fn render_detail_pane(f: &mut Frame, app: &mut App, area: Rect) {
         DetailTab::Events => render_events_tab(f, app, area),
         DetailTab::Resources => render_resources_tab(f, app, area),
         DetailTab::Info => render_info_tab(f, app, area),
+        DetailTab::Analytics => render_analytics_tab(f, app, area),
     }
 }
 
@@ -1166,6 +1172,53 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
     let area = centered_rect(65, 75, f.area());
     f.render_widget(Clear, area);
 
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+
+    let settings_tabs = [
+        (SettingsTab::Governor, "Governor"),
+        (SettingsTab::Networks, "Networks"),
+        (SettingsTab::Plugins, "Plugins"),
+        (SettingsTab::Config, "Config"),
+        (SettingsTab::Alerts, "Alerts"),
+    ];
+
+    let mut tab_spans = vec![Span::raw(" ")];
+    for (tab, label) in &settings_tabs {
+        let text = format!(" {label} ");
+        if app.settings_tab == *tab {
+            tab_spans.push(Span::styled(
+                text,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            tab_spans.push(Span::styled(text, Style::default().fg(Color::DarkGray)));
+        }
+    }
+    let hint = if app.settings_editing {
+        "  editing... Enter/ Esc to finish"
+    } else {
+        "  j/k:Nav  Enter:Edit  Ctrl-S:Save  Tab:switch"
+    };
+    tab_spans.push(Span::styled(hint, Style::default().fg(Color::DarkGray)));
+
+    f.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+
+    match app.settings_tab {
+        SettingsTab::Governor => render_settings_governor(f, app, chunks[1]),
+        SettingsTab::Networks => render_settings_networks(f, app, chunks[1]),
+        SettingsTab::Plugins => render_settings_plugins(f, app, chunks[1]),
+        SettingsTab::Config => render_settings_config(f, app, chunks[1]),
+        SettingsTab::Alerts => render_settings_alerts(f, app, chunks[1]),
+    }
+}
+
+fn render_settings_governor(f: &mut Frame, app: &App, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
     lines.push(section_title("Daemon"));
@@ -1184,17 +1237,15 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
     ));
     lines.push(Line::from(""));
 
-    lines.push(section_title("Editable Settings"));
+    lines.push(section_title("Governor Settings"));
     for (i, field) in app.settings_fields.iter().enumerate() {
         let is_selected = i == app.settings_cursor;
         let cursor_marker = if is_selected { "\u{25b6} " } else { "  " };
-
         let value_display = if app.settings_editing && is_selected {
             format!("{}|", app.settings_edit_buf)
         } else {
             field.value.clone()
         };
-
         let hint = match &field.kind {
             super::SettingsFieldKind::GovernorMode => " [\u{2190}/\u{2192} to cycle]",
             super::SettingsFieldKind::ReadOnly => "",
@@ -1212,7 +1263,6 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
                 }
             }
         };
-
         let label_style = if is_selected {
             Style::default()
                 .fg(Color::Cyan)
@@ -1227,7 +1277,6 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
         } else {
             Style::default()
         };
-
         lines.push(Line::from(vec![
             Span::styled(cursor_marker.to_string(), label_style),
             Span::styled(format!("{}: ", field.label), label_style),
@@ -1237,22 +1286,6 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
     }
 
     lines.push(Line::from(""));
-
-    lines.push(section_title("Security Rules"));
-    if let Some(rules) = &app.security_rules {
-        lines.push(kv_line(
-            "  File access rules",
-            &rules.file_access.len().to_string(),
-        ));
-        lines.push(kv_line(
-            "  Command patterns",
-            &rules.command_pattern.len().to_string(),
-        ));
-    } else {
-        lines.push(kv_line("  Rules", "(built-in defaults)"));
-    }
-    lines.push(Line::from(""));
-
     lines.push(section_title("Active Sessions"));
     if app.sessions.is_empty() {
         lines.push(Line::from("  None"));
@@ -1262,17 +1295,170 @@ fn render_settings_overlay(f: &mut Frame, app: &App) {
         lines.push(kv_line("  Total RSS", &format_bytes(Some(total_rss))));
     }
 
-    let title = if app.settings_editing {
-        " Settings (editing) "
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Governor ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        ),
+        area,
+    );
+}
+
+fn render_settings_networks(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Network Rules"));
+    if let Some(rules) = &app.security_rules {
+        if rules.network_allow.is_empty() {
+            lines.push(Line::from("  No network rules configured"));
+        } else {
+            for entry in &rules.network_allow {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", entry.name),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::raw(entry.hosts.join(", ")),
+                ]));
+            }
+        }
+        lines.push(Line::from(""));
+        lines.push(section_title("File Access Rules"));
+        lines.push(kv_line("  Rules loaded", &rules.file_access.len().to_string()));
+        lines.push(kv_line("  Command patterns", &rules.command_pattern.len().to_string()));
     } else {
-        " Settings (j/k:Nav  Enter:Edit  \u{2190}/\u{2192}:Cycle  Ctrl-S:Save  Esc:Close) "
-    };
+        lines.push(Line::from("  No rules loaded (using defaults)"));
+    }
 
     f.render_widget(
         Paragraph::new(lines).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(title)
+                .title(" Networks ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        ),
+        area,
+    );
+}
+
+fn render_settings_plugins(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Loaded Plugins"));
+    if app.plugins_list.is_empty() {
+        lines.push(Line::from("  No plugins loaded"));
+        lines.push(Line::from("  Run 'runsafety plugin list' to manage"));
+    } else {
+        for plugin in &app.plugins_list {
+            let status = if plugin.enabled {
+                Span::styled(" [ON] ", Style::default().fg(Color::Green))
+            } else {
+                Span::styled(" [OFF]", Style::default().fg(Color::Red))
+            };
+            lines.push(Line::from(vec![
+                status,
+                Span::raw(" "),
+                Span::styled(
+                    format!("{} v{}", plugin.name, plugin.version),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::raw(" - "),
+                Span::raw(&plugin.description),
+            ]));
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Plugins ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        ),
+        area,
+    );
+}
+
+fn render_settings_config(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Config Management"));
+    lines.push(Line::from(""));
+
+    for (i, field) in app.settings_fields.iter().enumerate() {
+        let is_selected = i == app.settings_cursor;
+        let cursor_marker = if is_selected { "\u{25b6} " } else { "  " };
+        let label_style = if is_selected {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(cursor_marker.to_string(), label_style),
+            Span::styled(format!("{}: ", field.label), label_style),
+            Span::styled(
+                field.value.clone(),
+                Style::default().fg(if is_selected { Color::Yellow } else { Color::DarkGray }),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(kv_line("  Config dir", "config/"));
+    lines.push(kv_line("  Export format", "TOML"));
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Config ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        ),
+        area,
+    );
+}
+
+fn render_settings_alerts(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Alert Configuration"));
+    lines.push(Line::from(""));
+
+    for (i, field) in app.settings_fields.iter().enumerate() {
+        let is_selected = i == app.settings_cursor;
+        let cursor_marker = if is_selected { "\u{25b6} " } else { "  " };
+        let label_style = if is_selected {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(cursor_marker.to_string(), label_style),
+            Span::styled(format!("{}: ", field.label), label_style),
+            Span::styled(
+                field.value.clone(),
+                Style::default().fg(if is_selected { Color::Yellow } else { Color::DarkGray }),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_title("Providers"));
+    lines.push(kv_line("  Email", "SMTP"));
+    lines.push(kv_line("  SMS", "Twilio"));
+    lines.push(kv_line("  Webhook", "HTTP POST"));
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Alerts ")
                 .border_style(Style::default().fg(Color::Cyan)),
         ),
         area,
@@ -1294,13 +1480,14 @@ fn render_help(f: &mut Frame) {
         )),
         Line::from(""),
         help_row("j / k", "Navigate sessions"),
-        help_row("Tab", "Switch tab (Events / Resources / Info)"),
+        help_row("BackTab", "Switch detail tab (Events/Resources/Info/Analytics)"),
+        help_row("Tab", "In Analytics: cycle sub-tabs"),
         help_row("Enter", "Toggle event detail panel"),
         help_row("J / K", "Scroll events (updates detail live)"),
         help_row("PgUp/Dn", "Scroll events"),
         help_row("D", "Kill selected session"),
         help_row("/", "Filter sessions"),
-        help_row("S / F3", "Settings editor"),
+        help_row("S / F3", "Settings editor (Tab to switch tabs)"),
         help_row("g / G", "Jump to first / last session"),
         help_row("q", "Quit"),
         help_row("Ctrl-C", "Force quit"),
@@ -1364,6 +1551,202 @@ fn severity_label(sev: EventSeverity) -> &'static str {
         EventSeverity::Warning => "WARN",
         EventSeverity::Critical => "CRIT",
     }
+}
+
+fn render_analytics_tab(f: &mut Frame, app: &mut App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+
+    // Sub-tabs header
+    let sub_tabs = [
+        (AnalyticsTab::Summary, "Summary"),
+        (AnalyticsTab::Memory, "Memory"),
+        (AnalyticsTab::Security, "Security"),
+    ];
+
+    let mut tab_spans = vec![Span::raw(" ")];
+    for (tab, label) in &sub_tabs {
+        let text = format!(" {label} ");
+        if app.analytics_tab == *tab {
+            tab_spans.push(Span::styled(
+                text,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            tab_spans.push(Span::styled(text, Style::default().fg(Color::DarkGray)));
+        }
+    }
+    tab_spans.push(Span::raw("  Tab:switch"));
+    f.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+
+    // Content
+    match app.analytics_tab {
+        AnalyticsTab::Summary => render_analytics_summary(f, app, chunks[1]),
+        AnalyticsTab::Memory => render_analytics_memory(f, app, chunks[1]),
+        AnalyticsTab::Security => render_analytics_security(f, app, chunks[1]),
+    }
+}
+
+fn render_analytics_summary(f: &mut Frame, app: &mut App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Overview"));
+    lines.push(kv_line("  Total sessions", &app.sessions.len().to_string()));
+    lines.push(kv_line("  Total events", &app.events.len().to_string()));
+    lines.push(kv_line("  Active sessions", &app.sessions.len().to_string()));
+    lines.push(Line::from(""));
+
+    // Events by CLI type
+    let mut type_counts: HashMap<String, usize> = HashMap::new();
+    for e in &app.events {
+        *type_counts.entry(e.cli_type.clone()).or_insert(0) += 1;
+    }
+    if !type_counts.is_empty() {
+        lines.push(section_title("Events by CLI"));
+        let mut sorted: Vec<_> = type_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        for (typ, count) in sorted.into_iter().take(10) {
+            lines.push(kv_line(&format!("  {typ}"), &count.to_string()));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // Severity breakdown
+    let mut sev_info: usize = 0;
+    let mut sev_warn: usize = 0;
+    let mut sev_crit: usize = 0;
+    for e in &app.events {
+        match e.severity {
+            EventSeverity::Info => sev_info += 1,
+            EventSeverity::Warning => sev_warn += 1,
+            EventSeverity::Critical => sev_crit += 1,
+        }
+    }
+    if sev_info + sev_warn + sev_crit > 0 {
+        lines.push(section_title("By Severity"));
+        lines.push(kv_line("  Info", &sev_info.to_string()));
+        lines.push(kv_line("  Warning", &sev_warn.to_string()));
+        lines.push(kv_line("  Critical", &sev_crit.to_string()));
+    }
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Analytics: Summary ")
+                .border_style(Style::default().fg(Color::Magenta)),
+        ),
+        area,
+    );
+}
+
+fn render_analytics_memory(f: &mut Frame, app: &mut App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Memory Stats"));
+
+    let rss_values: Vec<u64> = app.sessions.iter().filter_map(|s| s.rss_bytes).collect();
+    if rss_values.is_empty() {
+        lines.push(Line::from("  No memory data available"));
+    } else {
+        let avg = rss_values.iter().sum::<u64>() / rss_values.len() as u64;
+        let max = rss_values.iter().copied().max().unwrap_or(0);
+        let min = rss_values.iter().copied().min().unwrap_or(0);
+        lines.push(kv_line("  Average RSS", &format_bytes(Some(avg))));
+        lines.push(kv_line("  Max RSS", &format_bytes(Some(max))));
+        lines.push(kv_line("  Min RSS", &format_bytes(Some(min))));
+        lines.push(kv_line("  Sessions tracked", &rss_values.len().to_string()));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(section_title("RSS History (last 60 samples)"));
+    for session in app.sessions.iter() {
+        if let Some(_history) = app.rss_history.get(&session.pid) {
+            let last = _history.back().map(|v| format_bytes(Some(*v))).unwrap_or_else(|| "N/A".into());
+            lines.push(kv_line(
+                &format!("  PID {} ", session.pid),
+                &last,
+            ));
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Analytics: Memory ")
+                .border_style(Style::default().fg(Color::Magenta)),
+        ),
+        area,
+    );
+}
+
+fn render_analytics_security(f: &mut Frame, app: &mut App, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section_title("Security Events"));
+
+    let mut file_events = 0;
+    let mut network_events = 0;
+    let mut command_events = 0;
+    let mut kill_events = 0;
+
+    for e in &app.events {
+        match e.severity {
+            EventSeverity::Critical => kill_events += 1,
+            EventSeverity::Warning => {
+                // Check the raw_signal to categorize
+                match &e.raw_signal {
+                    super::SignalSummary::SensitiveFileAccess { .. }
+                    | super::SignalSummary::BoundaryViolation { .. } => file_events += 1,
+                    super::SignalSummary::UnexpectedNetwork { .. } => network_events += 1,
+                    super::SignalSummary::DangerousCommand { .. }
+                    | super::SignalSummary::SuspiciousChild { .. } => command_events += 1,
+                    super::SignalSummary::MemoryWarning { .. }
+                    | super::SignalSummary::MemoryUrgent { .. }
+                    | super::SignalSummary::LeakDetected { .. } => {}
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    lines.push(kv_line("  File access alerts", &file_events.to_string()));
+    lines.push(kv_line("  Network alerts", &network_events.to_string()));
+    lines.push(kv_line("  Command alerts", &command_events.to_string()));
+    lines.push(kv_line("  Critical (kills)", &kill_events.to_string()));
+    lines.push(Line::from(""));
+
+    lines.push(section_title("Recent Critical Events"));
+    let criticals: Vec<_> = app.events.iter().filter(|e| e.severity == EventSeverity::Critical).collect();
+    if criticals.is_empty() {
+        lines.push(Line::from("  None"));
+    } else {
+        for e in criticals.into_iter().rev().take(5) {
+            lines.push(Line::from(vec![
+                Span::styled("  ! ", Style::default().fg(Color::Red)),
+                Span::styled(&e.cli_type, Style::default().fg(Color::Yellow)),
+                Span::raw(" "),
+                Span::raw(&e.description),
+            ]));
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Analytics: Security ")
+                .border_style(Style::default().fg(Color::Magenta)),
+        ),
+        area,
+    );
 }
 
 fn section_title(title: &str) -> Line<'static> {

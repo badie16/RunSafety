@@ -390,6 +390,45 @@ async fn handle_client(
                     JsonRpcResponse::success(request.id, serde_json::json!({"injected": true}));
                 write_line(&mut writer, &resp).await?;
             }
+            "GetAnalyticsSummary" => {
+                let st = state.lock().await;
+                let total_sessions = st.sessions.len() as u64;
+                let total_events = st.events.len() as u64;
+                let mut events_by_cli: HashMap<String, u64> = HashMap::new();
+                for ev in &st.events {
+                    let cli = match &ev.signal {
+                        Signal::SessionDiscovered(s) => format!("{}", s.cli_type),
+                        Signal::SessionExited { cli_type, .. } => format!("{cli_type}"),
+                        Signal::MemoryWarning { cli_type, .. } => format!("{cli_type}"),
+                        Signal::MemoryUrgent { cli_type, .. } => format!("{cli_type}"),
+                        Signal::LeakDetected { cli_type, .. } => format!("{cli_type}"),
+                        Signal::OomKill { cli_type, .. } => format!("{cli_type}"),
+                        Signal::SensitiveFileAccess { cli_type, .. } => format!("{cli_type}"),
+                        Signal::BoundaryViolation { cli_type, .. } => format!("{cli_type}"),
+                        Signal::UnexpectedNetwork { cli_type, .. } => format!("{cli_type}"),
+                        Signal::DangerousCommand { cli_type, .. } => format!("{cli_type}"),
+                        Signal::SuspiciousChild { cli_type, .. } => format!("{cli_type}"),
+                        Signal::ExfilAttempt { cli_type, .. } => format!("{cli_type}"),
+                    };
+                    *events_by_cli.entry(cli).or_insert(0) += 1;
+                }
+                let summary = serde_json::json!({
+                    "total_sessions": total_sessions,
+                    "active_sessions": total_sessions,
+                    "total_events": total_events,
+                    "events_by_cli": events_by_cli,
+                });
+                let resp = JsonRpcResponse::success(request.id, summary);
+                write_line(&mut writer, &resp).await?;
+            }
+            "ListPlugins" => {
+                let plugins = serde_json::json!([
+                    {"name": "SecurityPlugin", "version": "0.1.0", "description": "File/network/command blocking", "enabled": true},
+                    {"name": "AnalyticsPlugin", "version": "0.1.0", "description": "Event analytics", "enabled": true},
+                ]);
+                let resp = JsonRpcResponse::success(request.id, plugins);
+                write_line(&mut writer, &resp).await?;
+            }
             other => {
                 let resp = JsonRpcResponse::error(
                     request.id,

@@ -26,8 +26,37 @@ use crate::ipc::IpcClient;
 use crate::proc_info;
 
 const HISTORY_CAP: usize = 60;
-const ENDED_SESSION_TTL: Duration = Duration::from_secs(3600); // 1 hour
+const ENDED_SESSION_TTL: Duration = Duration::from_secs(3600);
 const MAX_ENDED_SESSIONS: usize = 20;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AnalyticsSummary {
+    pub total_sessions: u64,
+    pub active_sessions: u64,
+    pub total_events: u64,
+    pub events_by_severity: HashMap<String, u64>,
+    pub events_by_cli: HashMap<String, u64>,
+    pub top_sensitive_files: Vec<(String, u64)>,
+    pub top_network_hosts: Vec<(String, u64)>,
+    pub top_dangerous_commands: Vec<(String, u64)>,
+    pub avg_memory_usage: f64,
+    pub max_memory_usage: u64,
+    pub total_oom_kills: u64,
+    pub total_leaks_detected: u64,
+    pub total_file_access_alerts: u64,
+    pub total_network_alerts: u64,
+    pub total_command_alerts: u64,
+    pub total_exfil_attempts: u64,
+    pub critical_alerts_today: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginInfo {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub enabled: bool,
+}
 
 pub struct EndedSession {
     pub info: SessionInfo,
@@ -46,6 +75,23 @@ pub enum DetailTab {
     Events,
     Resources,
     Info,
+    Analytics,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum AnalyticsTab {
+    Summary,
+    Memory,
+    Security,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum SettingsTab {
+    Governor,
+    Networks,
+    Plugins,
+    Config,
+    Alerts,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -57,6 +103,8 @@ pub enum ActivePane {
 
 pub struct App {
     pub detail_tab: DetailTab,
+    pub analytics_tab: AnalyticsTab,
+    pub settings_tab: SettingsTab,
     pub sessions: Vec<SessionInfo>,
     pub events: Vec<EventEntry>,
     pub selected: usize,
@@ -69,7 +117,7 @@ pub struct App {
     pub status_msg: Option<(String, Instant)>,
     pub cpu_tracker: CpuTracker,
     pub cpu_percents: HashMap<u32, f32>,
-    pub first_seen: HashMap<u64, Instant>, // session_id -> when TUI first saw it
+    pub first_seen: HashMap<u64, Instant>,
     pub rss_history: HashMap<u32, VecDeque<u64>>,
     pub cpu_history: HashMap<u32, VecDeque<u64>>,
     pub connected_at: Instant,
@@ -77,18 +125,16 @@ pub struct App {
     pub agent_config: Option<AgentConfig>,
     pub security_rules: Option<SecurityRulesConfig>,
     pub quit: bool,
-    // Settings editor state
     pub settings_cursor: usize,
     pub settings_editing: bool,
     pub settings_edit_buf: String,
     pub settings_fields: Vec<SettingsField>,
     pub daemon_pid: Option<u32>,
-    // Event detail panel
     pub event_detail: Option<EventDetail>,
-    // Which pane has focus (for border highlighting and key routing)
     pub active_pane: ActivePane,
-    // Layout areas for mouse hit-testing (set each frame by render)
     pub layout: LayoutAreas,
+    pub analytics_summary: Option<AnalyticsSummary>,
+    pub plugins_list: Vec<PluginInfo>,
 }
 
 /// Stores layout rectangles from the last render for mouse hit-testing.
@@ -233,6 +279,8 @@ impl App {
         let daemon_pid = find_daemon_pid();
         Self {
             detail_tab: DetailTab::Events,
+            analytics_tab: AnalyticsTab::Summary,
+            settings_tab: SettingsTab::Governor,
             sessions: Vec::new(),
             events: Vec::new(),
             selected: 0,
@@ -261,6 +309,8 @@ impl App {
             event_detail: None,
             active_pane: ActivePane::Sessions,
             layout: LayoutAreas::default(),
+            analytics_summary: None,
+            plugins_list: Vec::new(),
         }
     }
 
@@ -1289,6 +1339,18 @@ pub async fn run(focus_event: Option<usize>) -> Result<()> {
         // Detail will be opened after first render when events are loaded
     }
 
+    // Load analytics summary
+    if let Ok(summary) = poll_client.get_analytics_summary().await {
+        if let Ok(s) = serde_json::from_value::<AnalyticsSummary>(summary) {
+            app.analytics_summary = Some(s);
+        }
+    }
+
+    // Load plugins list
+    if let Ok(plugins) = poll_client.list_plugins().await {
+        app.plugins_list = plugins;
+    }
+
     // Spawn subscription listener
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<EventNotification>();
     tokio::spawn(async move {
@@ -1716,28 +1778,47 @@ fn handle_input(app: &mut App, key: KeyEvent) {
             app.filter_text.clear();
         }
         KeyCode::Tab => {
-            // Tab cycles: Sessions -> Events -> (EventDetail if open) -> Sessions
-            app.active_pane = match app.active_pane {
-                ActivePane::Sessions => ActivePane::Events,
-                ActivePane::Events => {
-                    if app.event_detail.is_some() && app.detail_tab == DetailTab::Events {
-                        ActivePane::EventDetail
-                    } else {
-                        ActivePane::Sessions
+            // If on Analytics tab, cycle analytics sub-tabs
+            if app.detail_tab == DetailTab::Analytics {
+                app.analytics_tab = match app.analytics_tab {
+                    AnalyticsTab::Summary => AnalyticsTab::Memory,
+                    AnalyticsTab::Memory => AnalyticsTab::Security,
+                    AnalyticsTab::Security => AnalyticsTab::Summary,
+                };
+            } else {
+                // Tab cycles: Sessions -> Events -> (EventDetail if open) -> Sessions
+                app.active_pane = match app.active_pane {
+                    ActivePane::Sessions => ActivePane::Events,
+                    ActivePane::Events => {
+                        if app.event_detail.is_some() && app.detail_tab == DetailTab::Events {
+                            ActivePane::EventDetail
+                        } else {
+                            ActivePane::Sessions
+                        }
                     }
-                }
-                ActivePane::EventDetail => ActivePane::Sessions,
-            };
+                    ActivePane::EventDetail => ActivePane::Sessions,
+                };
+            }
         }
         KeyCode::BackTab => {
-            // Shift-Tab cycles detail tabs: Events -> Resources -> Info
-            app.detail_tab = match app.detail_tab {
-                DetailTab::Events => DetailTab::Resources,
-                DetailTab::Resources => DetailTab::Info,
-                DetailTab::Info => DetailTab::Events,
-            };
-            app.event_scroll = 0;
-            app.active_pane = ActivePane::Events;
+            // If on Analytics tab, cycle analytics sub-tabs
+            if app.detail_tab == DetailTab::Analytics {
+                app.analytics_tab = match app.analytics_tab {
+                    AnalyticsTab::Summary => AnalyticsTab::Security,
+                    AnalyticsTab::Security => AnalyticsTab::Memory,
+                    AnalyticsTab::Memory => AnalyticsTab::Summary,
+                };
+            } else {
+                // Otherwise cycle detail tabs: Events -> Resources -> Info -> Analytics
+                app.detail_tab = match app.detail_tab {
+                    DetailTab::Events => DetailTab::Resources,
+                    DetailTab::Resources => DetailTab::Info,
+                    DetailTab::Info => DetailTab::Analytics,
+                    DetailTab::Analytics => DetailTab::Events,
+                };
+                app.event_scroll = 0;
+                app.active_pane = ActivePane::Events;
+            }
         }
         KeyCode::Esc => {
             if !app.filter_text.is_empty() {
@@ -1976,6 +2057,29 @@ fn handle_settings_input(app: &mut App, key: KeyEvent) {
             app.show_settings = false;
             app.settings_cursor = 0;
         }
+        // Tab/BackTab to switch settings tabs
+        KeyCode::Tab => {
+            app.settings_tab = match app.settings_tab {
+                SettingsTab::Governor => SettingsTab::Networks,
+                SettingsTab::Networks => SettingsTab::Plugins,
+                SettingsTab::Plugins => SettingsTab::Config,
+                SettingsTab::Config => SettingsTab::Alerts,
+                SettingsTab::Alerts => SettingsTab::Governor,
+            };
+            app.settings_cursor = 0;
+            rebuild_settings_fields(app);
+        }
+        KeyCode::BackTab => {
+            app.settings_tab = match app.settings_tab {
+                SettingsTab::Governor => SettingsTab::Alerts,
+                SettingsTab::Networks => SettingsTab::Governor,
+                SettingsTab::Plugins => SettingsTab::Networks,
+                SettingsTab::Config => SettingsTab::Plugins,
+                SettingsTab::Alerts => SettingsTab::Config,
+            };
+            app.settings_cursor = 0;
+            rebuild_settings_fields(app);
+        }
         KeyCode::Down | KeyCode::Char('j') => {
             if !app.settings_fields.is_empty() {
                 app.settings_cursor = (app.settings_cursor + 1).min(app.settings_fields.len() - 1);
@@ -2041,6 +2145,159 @@ fn handle_settings_input(app: &mut App, key: KeyEvent) {
         }
         _ => {}
     }
+}
+
+fn rebuild_settings_fields(app: &mut App) {
+    app.settings_fields = match app.settings_tab {
+        SettingsTab::Governor => build_governor_fields(&app.agent_config),
+        SettingsTab::Networks => build_network_fields(&app.security_rules),
+        SettingsTab::Plugins => build_plugin_fields(&app.plugins_list),
+        SettingsTab::Config => build_config_fields(),
+        SettingsTab::Alerts => build_alert_fields(&app.agent_config),
+    };
+}
+
+fn build_governor_fields(config: &Option<AgentConfig>) -> Vec<SettingsField> {
+    let mut fields = Vec::new();
+    if let Some(cfg) = config {
+        let mode_str = match cfg.governor.action {
+            runsafety_shared::config::GovernorAction::Warn => "warn",
+            runsafety_shared::config::GovernorAction::Throttle => "throttle",
+            runsafety_shared::config::GovernorAction::Kill => "kill",
+        };
+        fields.push(SettingsField {
+            label: "Mode".into(),
+            value: mode_str.into(),
+            kind: SettingsFieldKind::GovernorMode,
+        });
+        fields.push(SettingsField {
+            label: "Warn Threshold".into(),
+            value: format!("{:.0}%", cfg.governor.warn_threshold * 100.0),
+            kind: SettingsFieldKind::Threshold,
+        });
+        fields.push(SettingsField {
+            label: "Urgent Threshold".into(),
+            value: format!("{:.0}%", cfg.governor.urgent_threshold * 100.0),
+            kind: SettingsFieldKind::Threshold,
+        });
+        for (cli, limits) in &cfg.governor.cli {
+            fields.push(SettingsField {
+                label: format!("{cli} memory_high"),
+                value: limits.memory_high.clone().unwrap_or_else(|| "--".into()),
+                kind: SettingsFieldKind::MemorySize,
+            });
+            fields.push(SettingsField {
+                label: format!("{cli} memory_max"),
+                value: limits.memory_max.clone().unwrap_or_else(|| "--".into()),
+                kind: SettingsFieldKind::MemorySize,
+            });
+        }
+    } else {
+        fields.push(SettingsField {
+            label: "Mode".into(),
+            value: "throttle".into(),
+            kind: SettingsFieldKind::GovernorMode,
+        });
+        fields.push(SettingsField {
+            label: "Warn Threshold".into(),
+            value: "85%".into(),
+            kind: SettingsFieldKind::Threshold,
+        });
+        fields.push(SettingsField {
+            label: "Urgent Threshold".into(),
+            value: "95%".into(),
+            kind: SettingsFieldKind::Threshold,
+        });
+    }
+    fields
+}
+
+fn build_network_fields(rules: &Option<SecurityRulesConfig>) -> Vec<SettingsField> {
+    let mut fields = Vec::new();
+    if let Some(rules) = rules {
+        for (i, entry) in rules.network_allow.iter().enumerate() {
+            fields.push(SettingsField {
+                label: format!("{}", entry.name),
+                value: entry.hosts.join(", "),
+                kind: SettingsFieldKind::NetworkEntry(i),
+            });
+        }
+    }
+    if fields.is_empty() {
+        fields.push(SettingsField {
+            label: "No network rules".into(),
+            value: "".into(),
+            kind: SettingsFieldKind::ReadOnly,
+        });
+    }
+    fields
+}
+
+fn build_plugin_fields(_plugins: &[PluginInfo]) -> Vec<SettingsField> {
+    // Placeholder - will be populated from IPC
+    vec![SettingsField {
+        label: "Plugins loaded via daemon".into(),
+        value: "see 'runsafety plugin list'".into(),
+        kind: SettingsFieldKind::ReadOnly,
+    }]
+}
+
+fn build_config_fields() -> Vec<SettingsField> {
+    vec![
+        SettingsField {
+            label: "Export config".into(),
+            value: "Ctrl+E".into(),
+            kind: SettingsFieldKind::ReadOnly,
+        },
+        SettingsField {
+            label: "Import config".into(),
+            value: "Ctrl+I".into(),
+            kind: SettingsFieldKind::ReadOnly,
+        },
+        SettingsField {
+            label: "Validate config".into(),
+            value: "Ctrl+V".into(),
+            kind: SettingsFieldKind::ReadOnly,
+        },
+    ]
+}
+
+fn build_alert_fields(config: &Option<AgentConfig>) -> Vec<SettingsField> {
+    let mut fields = Vec::new();
+    if let Some(cfg) = config {
+        let enabled = if cfg.alerts.enabled { "on" } else { "off" };
+        fields.push(SettingsField {
+            label: "Enabled".into(),
+            value: enabled.into(),
+            kind: SettingsFieldKind::ReadOnly,
+        });
+        fields.push(SettingsField {
+            label: "Min Severity".into(),
+            value: cfg.alerts.min_severity.clone().unwrap_or_else(|| "Warning".into()),
+            kind: SettingsFieldKind::ReadOnly,
+        });
+        if let Some(ref email) = cfg.alerts.email {
+            fields.push(SettingsField {
+                label: "Email To".into(),
+                value: email.to.clone(),
+                kind: SettingsFieldKind::ReadOnly,
+            });
+        }
+        if let Some(ref webhook) = cfg.alerts.webhook {
+            fields.push(SettingsField {
+                label: "Webhook URL".into(),
+                value: webhook.url.clone(),
+                kind: SettingsFieldKind::ReadOnly,
+            });
+        }
+    } else {
+        fields.push(SettingsField {
+            label: "Alerts".into(),
+            value: "not configured".into(),
+            kind: SettingsFieldKind::ReadOnly,
+        });
+    }
+    fields
 }
 
 // --- Settings field helpers ---
